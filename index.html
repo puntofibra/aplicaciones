@@ -79,7 +79,7 @@
   .btn.danger{color:var(--danger); border-color:transparent; background:transparent; margin-right:auto}
   .btn.danger:hover{background:rgba(255,107,107,.12)}
   .preview{display:flex; align-items:center; gap:12px; padding:12px; border-radius:12px; background:var(--surface); margin-top:14px; min-height:58px}
-  .preview .ico{width:34px;height:34px;border-radius:9px;background:#fff;display:grid;place-items:center;overflow:hidden}
+  .preview .ico{width:34px;height:34px;border-radius:9px;background:#fff;display:grid;place-items:center;overflow:hidden;font-weight:800;font-size:15px;color:var(--bg)}
   .preview img{width:22px;height:22px}
   .preview .t{font-size:13px; color:var(--muted)}
   .preview .t b{display:block; color:var(--text); font-size:14px}
@@ -199,9 +199,80 @@
 
   /* ---------- Utilidades ---------- */
   const host = u => { try{ return new URL(u).hostname.replace(/^www\./,''); }catch{ return ''; } };
-  const favicon = u => `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host(u))}&sz=64`;
   const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const norm = u => { u = u.trim(); return u && !/^https?:\/\//i.test(u) ? 'https://' + u : u; };
+
+
+  /* ---------- Iconos (favicons) ----------
+     Google s2 solo conoce el icono del dominio raiz: para una app que vive en
+     una subcarpeta (puntofibra.github.io/panel/) o para un dominio que no tiene
+     indexado devuelve el globo generico. Asi que probamos varias fuentes en
+     orden y nos quedamos con la primera que devuelva una imagen de verdad. */
+
+  const iconCache = new Map();   // url de la web -> src del icono (o null)
+  let iconRun = 0;               // invalida pinturas viejas al recargar
+
+  // Carga una imagen y responde con su src si es valida. minSize sirve para
+  // descartar el globo generico de Google, que llega a 16px aunque pidamos 64.
+  function loadImg(src, minSize){
+    return new Promise(res => {
+      if(!src) return res(null);
+      const i = new Image();
+      const done = v => { clearTimeout(t); i.onload = i.onerror = null; res(v); };
+      const t = setTimeout(() => done(null), 7000);
+      i.onload  = () => done(i.naturalWidth && i.naturalWidth >= (minSize || 1) ? src : null);
+      i.onerror = () => done(null);
+      i.src = src;
+    });
+  }
+
+  // Lee el <link rel="icon"> que declara la propia pagina. Solo funciona con
+  // webs del mismo origen (el resto lo bloquea CORS), pero eso cubre todas mis
+  // apps de puntofibra.github.io, que es justo donde fallaba.
+  async function declaredIcon(u){
+    try{
+      const url = new URL(u);
+      if(url.origin !== location.origin) return null;
+      const html = await fetch(u, { cache:'force-cache' }).then(r => r.ok ? r.text() : '');
+      if(!html) return null;
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const links = [...doc.querySelectorAll('link[href]')].filter(l =>
+        /(^|\s)(icon|shortcut\s+icon|apple-touch-icon(-precomposed)?)(\s|$)/i.test(l.getAttribute('rel') || ''));
+      const score = l => (/svg/i.test((l.getAttribute('type')||'') + (l.getAttribute('href')||'')) ? 1000 : 0)
+                       + (parseInt((l.getAttribute('sizes')||'0').split(/[xX]/)[0], 10) || 0);
+      links.sort((a,b) => score(b) - score(a));
+      return links[0] ? new URL(links[0].getAttribute('href'), u).href : null;
+    }catch{ return null; }
+  }
+
+  async function resolveIcon(u){
+    if(iconCache.has(u)) return iconCache.get(u);
+    let url; try{ url = new URL(u); }catch{ iconCache.set(u, null); return null; }
+    const dir = url.origin + url.pathname.replace(/[^/]*$/, '');
+    const cands = [
+      [await declaredIcon(u), 0],
+      [dir + 'favicon.svg', 0], [dir + 'favicon.ico', 0],
+      [dir + 'icon.svg', 0], [dir + 'icon.png', 0], [dir + 'icon-192.png', 0],
+      [url.origin + '/favicon.svg', 0], [url.origin + '/favicon.ico', 0],
+      ['https://icons.duckduckgo.com/ip3/' + url.hostname + '.ico', 0],
+      ['https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=64&url=' + encodeURIComponent(url.origin + '/'), 17],
+      ['https://www.google.com/s2/favicons?domain=' + encodeURIComponent(url.hostname) + '&sz=64', 17]
+    ];
+    let out = null;
+    for(const [src, min] of cands){ out = await loadImg(src, min); if(out) break; }
+    iconCache.set(u, out);
+    return out;
+  }
+
+  // Mientras se resuelve se ve la inicial; al resolverse se sustituye por el icono.
+  function paintIcons(scope){
+    const run = iconRun;
+    scope.querySelectorAll('[data-icon]').forEach(async box => {
+      const src = await resolveIcon(box.dataset.icon);
+      if(src && run === iconRun && box.isConnected)
+        box.innerHTML = `<img src="${esc(src)}" alt="" loading="lazy">`;
+    });
+  }
 
   /* ---------- Render ---------- */
   const main = document.getElementById('main');
@@ -218,11 +289,12 @@
       if(!ls.length) return '';
       return `<section class="cat"><h2>${esc(c.name)}</h2><div class="grid">${ls.map(tile).join('')}</div></section>`;
     }).join('');
+    paintIcons(main);
   }
   function tile(l){
     const letter = esc((l.name||host(l.url)||'?')[0].toUpperCase());
     return `<a class="tile" href="${esc(l.url)}" target="_blank" rel="noopener" title="${esc(l.url)}">
-      <div class="ico"><img src="${favicon(l.url)}" alt="" loading="lazy" onerror="this.replaceWith(document.createTextNode('${letter}'))"></div>
+      <div class="ico" data-icon="${esc(l.url)}">${letter}</div>
       <div class="name">${esc(l.name)}</div>
       <button class="more" data-edit="${l.id}" title="Editar" aria-label="Editar ${esc(l.name)}">⋯</button>
     </a>`;
@@ -253,7 +325,7 @@
     closeMenu();
     if(act === 'add') openAdd();
     if(act === 'order') openOrder();
-    if(act === 'reload') load().then(() => toast('Actualizado'));
+    if(act === 'reload'){ iconCache.clear(); iconRun++; load().then(() => toast('Actualizado')); }
   });
   document.addEventListener('keydown', e => { if(e.key === 'Escape'){ closeMenu(); closeOverlays(); } });
 
@@ -283,11 +355,15 @@
     fillCats(editing?.cat); updatePreview();
     ovAdd.classList.add('open'); fUrl.focus();
   }
+  let previewT;
   function updatePreview(){
     const u = norm(fUrl.value), h = host(u);
+    clearTimeout(previewT);
     if(!h){ preview.innerHTML = `<div class="t">Escribe la dirección para ver el icono</div>`; return; }
     if(!nameTouched) fName.value = h.split('.')[0].replace(/^\w/, c => c.toUpperCase());
-    preview.innerHTML = `<div class="ico"><img src="${favicon(u)}" alt=""></div><div class="t"><b>${esc(fName.value)}</b>${esc(h)}</div>`;
+    const letter = esc((fName.value || h)[0].toUpperCase());
+    preview.innerHTML = `<div class="ico" data-icon="${esc(u)}">${letter}</div><div class="t"><b>${esc(fName.value)}</b>${esc(h)}</div>`;
+    previewT = setTimeout(() => paintIcons(preview), 450);   // espera a que termine de escribir
   }
   fUrl.addEventListener('input', updatePreview);
   fName.addEventListener('input', () => { nameTouched = true; updatePreview(); });
