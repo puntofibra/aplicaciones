@@ -94,6 +94,28 @@
   .order-list .ic:hover{background:var(--surface2)}
   .order-list .ic:disabled{opacity:.3; cursor:default}
 
+  /* ---- Mantener pulsado + modo reordenar ---- */
+  .tile .hold{position:absolute; left:14px; right:14px; bottom:5px; height:3px; border-radius:2px; background:var(--line); overflow:hidden; opacity:0; transition:opacity .15s}
+  .tile .hold i{display:block; height:100%; width:0; background:var(--accent); border-radius:2px}
+  .tile.pressing{transform:scale(.93)!important; background:var(--surface2)}
+  .tile.pressing .hold{opacity:1}
+  .tile.pressing .hold i{width:100%; transition:width 3s linear}
+
+  body.reorder .tile{animation:wiggle .48s ease-in-out infinite alternate; cursor:grab; touch-action:none}
+  body.reorder .tile:hover{transform:none}
+  body.reorder .tile .more{display:none}
+  body.reorder .hint{display:none}
+  @keyframes wiggle{from{transform:rotate(-.9deg)}to{transform:rotate(.9deg)}}
+  .tile.ghost{opacity:.22; animation:none!important; border-style:dashed}
+  .tile.flying{position:fixed; z-index:90; margin:0; pointer-events:none; animation:none!important;
+    transform:scale(1.07); box-shadow:0 26px 55px rgba(0,0,0,.55); border-color:var(--accent); opacity:.96}
+
+  .reorder-bar{position:fixed; left:50%; bottom:26px; z-index:85; display:flex; align-items:center; gap:16px;
+    background:var(--surface); border:1px solid var(--line); border-radius:999px; padding:8px 8px 8px 20px;
+    box-shadow:0 22px 55px rgba(0,0,0,.5); font-size:14px; color:var(--muted); white-space:nowrap;
+    opacity:0; pointer-events:none; transform:translateX(-50%) translateY(22px); transition:.2s}
+  body.reorder .reorder-bar{opacity:1; pointer-events:auto; transform:translateX(-50%)}
+
   .toast{position:fixed; left:50%; bottom:28px; transform:translateX(-50%) translateY(20px); background:var(--text); color:var(--bg); padding:11px 18px; border-radius:999px; font-weight:600; font-size:14px; opacity:0; transition:.25s; z-index:80; pointer-events:none}
   .toast.show{opacity:1; transform:translateX(-50%)}
   .toast.err{background:var(--danger); color:#fff}
@@ -111,12 +133,13 @@
   <div class="count" id="count"></div>
 </header>
 <main id="main"><div class="empty"><div class="pulse">…</div>Cargando tus webs</div></main>
-<div class="hint">Triple clic en el fondo para abrir el menú</div>
+<div class="hint">Triple clic en el fondo para el menú · mantén pulsado un icono 3 s para moverlo</div>
 <div class="sync" id="sync">Guardando…</div>
 
 <div class="fab-menu" id="menu">
   <button data-act="add"><span>+</span>Añadir web</button>
   <button data-act="order"><span>⇅</span>Ordenar categorías</button>
+  <button data-act="mover"><span>✣</span>Mover iconos</button>
   <div class="sep"></div>
   <button data-act="reload"><span>↻</span>Recargar</button>
 </div>
@@ -147,6 +170,11 @@
     <ul class="order-list" id="orderList"></ul>
     <div class="actions"><button class="btn primary" data-close>Listo</button></div>
   </div>
+</div>
+
+<div class="reorder-bar" id="reorderBar">
+  Arrastra los iconos para colocarlos
+  <button class="btn primary" id="btnDoneOrder">Listo</button>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -204,10 +232,12 @@
 
 
   /* ---------- Iconos (favicons) ----------
-     Google s2 solo conoce el icono del dominio raiz: para una app que vive en
-     una subcarpeta (puntofibra.github.io/panel/) o para un dominio que no tiene
-     indexado devuelve el globo generico. Asi que probamos varias fuentes en
-     orden y nos quedamos con la primera que devuelva una imagen de verdad. */
+     Google y DuckDuckGo devuelven un icono generico (el circulo gris con la
+     flecha) cuando no conocen el dominio, y desde el navegador no hay forma de
+     distinguirlo de uno bueno: por eso salian iconos raros. Ahora el orden es
+     1) lo que podemos comprobar desde aqui, 2) el backend, que abre la web con
+     UrlFetchApp y lee su <link rel="icon"> sin las ataduras del CORS, y
+     3) si no hay nada, la inicial. Nada de iconos inventados. */
 
   const iconCache = new Map();   // url de la web -> src del icono (o null)
   let iconRun = 0;               // invalida pinturas viejas al recargar
@@ -245,6 +275,13 @@
     }catch{ return null; }
   }
 
+  // El backend usa LockService, asi que las peticiones van de una en una.
+  let colaIcono = Promise.resolve();
+  function iconoServidor(u){
+    colaIcono = colaIcono.catch(() => {}).then(() => api({ action:'icon', u }));
+    return colaIcono;
+  }
+
   async function resolveIcon(u){
     if(iconCache.has(u)) return iconCache.get(u);
     const done = v => { iconCache.set(u, v); return v; };
@@ -260,16 +297,22 @@
     ];
     for(const src of directos){ if(await loadImg(src)) return done(src); }
 
-    // 2) Google. Pedimos 64px: si contesta 16 es su globo generico, o sea que
-    //    no conoce el dominio (y entonces DuckDuckGo tampoco suele conocerlo).
-    const g = 'https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=64&url=' + encodeURIComponent(url.origin + '/');
-    const ancho = await imgSize(g);
-    if(ancho >= 17) return done(g);
-    if(ancho === 16) return done(null);          // globo generico -> mejor la inicial
+    // 2) Que lo busque el servidor: el ve el HTML de cualquier web.
+    try{
+      const r = await iconoServidor(u);
+      if(r.src && await loadImg(r.src)) return done(r.src);
+      if(r.b64 && await loadImg(r.b64)) return done(r.b64);   // por si no deja enlazarlo
+    }catch(e){ /* sin conexion: seguimos con lo siguiente */ }
 
-    // 3) Google ni contesto: probamos DuckDuckGo.
-    const d = 'https://icons.duckduckgo.com/ip3/' + url.hostname + '.ico';
-    return done(await loadImg(d));
+    // 3) Google, solo si contesta con un icono de verdad: cuando no conoce el
+    //    dominio devuelve su globo de 16 px aunque le pidamos 64. Nada de
+    //    DuckDuckGo, que siempre responde con el circulo gris de la flecha
+    //    (ese era el icono raro que salia en O2online, Server TV y Iboproapp).
+    const g = 'https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=64&url='
+            + encodeURIComponent(url.origin + '/');
+    if(await imgSize(g) >= 17) return done(g);
+
+    return done(null);   // sin icono: se queda la inicial
   }
 
   // Mientras se resuelve se ve la inicial; al resolverse se sustituye por el icono.
@@ -295,16 +338,17 @@
     main.innerHTML = state.cats.map(c => {
       const ls = state.links.filter(l => l.cat === c.id);
       if(!ls.length) return '';
-      return `<section class="cat"><h2>${esc(c.name)}</h2><div class="grid">${ls.map(tile).join('')}</div></section>`;
+      return `<section class="cat" data-cat="${esc(c.id)}"><h2>${esc(c.name)}</h2><div class="grid">${ls.map(tile).join('')}</div></section>`;
     }).join('');
     paintIcons(main);
   }
   function tile(l){
     const letter = esc((l.name||host(l.url)||'?')[0].toUpperCase());
-    return `<a class="tile" href="${esc(l.url)}" target="_blank" rel="noopener" title="${esc(l.url)}">
+    return `<a class="tile" href="${esc(l.url)}" target="_blank" rel="noopener" title="${esc(l.url)}" data-id="${esc(l.id)}">
       <div class="ico" data-icon="${esc(l.url)}">${letter}</div>
       <div class="name">${esc(l.name)}</div>
       <button class="more" data-edit="${l.id}" title="Editar" aria-label="Editar ${esc(l.name)}">⋯</button>
+      <div class="hold"><i></i></div>
     </a>`;
   }
   main.addEventListener('click', e => {
@@ -333,9 +377,10 @@
     closeMenu();
     if(act === 'add') openAdd();
     if(act === 'order') openOrder();
+    if(act === 'mover') entrarMover();
     if(act === 'reload'){ iconCache.clear(); iconRun++; load().then(() => toast('Actualizado')); }
   });
-  document.addEventListener('keydown', e => { if(e.key === 'Escape'){ closeMenu(); closeOverlays(); } });
+  document.addEventListener('keydown', e => { if(e.key === 'Escape'){ closeMenu(); closeOverlays(); salirMover(); } });
 
   /* ---------- Añadir / editar ---------- */
   const ovAdd = document.getElementById('ovAdd');
@@ -456,6 +501,122 @@
     dragFrom = null;
   });
   orderList.addEventListener('dragend', e => e.target.closest('li')?.classList.remove('dragging'));
+
+  /* ---------- Mover iconos (mantener pulsado 3 s) ----------
+     Pulsas 3 s sobre un icono (la barrita de abajo va marcando la espera),
+     el tablero entra en modo mover y arrastras donde quieras: delante o detras
+     de otro, o a otra categoria. Al soltar se guarda el orden. */
+
+  const ESPERA = 3000;
+  let hold = null, drag = null, moviendo = false;
+
+  function entrarMover(){
+    if(moviendo) return;
+    moviendo = true; document.body.classList.add('reorder');
+    try{ navigator.vibrate && navigator.vibrate(25); }catch(e){}
+  }
+  function salirMover(){
+    if(!moviendo) return;
+    moviendo = false; document.body.classList.remove('reorder');
+  }
+  function cancelarHold(){
+    if(!hold) return;
+    clearTimeout(hold.t); hold.tile.classList.remove('pressing'); hold = null;
+  }
+
+  document.addEventListener('pointerdown', e => {
+    const tile = e.target.closest('.tile');
+    if(!tile){
+      if(moviendo && !e.target.closest('.reorder-bar, .overlay, .fab-menu')) salirMover();
+      return;
+    }
+    if(e.button) return;
+    if(moviendo){ e.preventDefault(); empezarArrastre(tile, e.clientX, e.clientY, e.pointerId); return; }
+    if(e.target.closest('.more')) return;
+    const x = e.clientX, y = e.clientY, id = e.pointerId;
+    tile.classList.add('pressing');
+    hold = { tile, x, y };
+    hold.t = setTimeout(() => {
+      cancelarHold(); entrarMover(); empezarArrastre(tile, x, y, id);
+    }, ESPERA);
+  });
+
+  document.addEventListener('pointermove', e => {
+    if(hold && Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > 12) cancelarHold();
+    if(drag) moverArrastre(e.clientX, e.clientY);
+  }, { passive:true });
+
+  ['pointerup','pointercancel'].forEach(ev => document.addEventListener(ev, () => {
+    cancelarHold();
+    if(drag) soltarArrastre();
+  }));
+  document.addEventListener('scroll', cancelarHold, true);
+  document.addEventListener('contextmenu', e => { if(hold || moviendo) e.preventDefault(); });
+  // En modo mover, tocar un icono no abre la web.
+  document.addEventListener('click', e => {
+    if(moviendo && e.target.closest('.tile')){ e.preventDefault(); e.stopPropagation(); }
+  }, true);
+  document.getElementById('btnDoneOrder').addEventListener('click', salirMover);
+
+  function empezarArrastre(tile, x, y, pid){
+    const r = tile.getBoundingClientRect();
+    const clone = tile.cloneNode(true);
+    clone.classList.add('flying');
+    clone.style.cssText += `;width:${r.width}px;height:${r.height}px;left:${r.left}px;top:${r.top}px`;
+    document.body.appendChild(clone);
+    tile.classList.add('ghost');
+    drag = { tile, clone, dx: x - r.left, dy: y - r.top };
+    if(pid != null){ try{ document.body.setPointerCapture(pid); drag.pid = pid; }catch(e){} }
+    document.body.style.cursor = 'grabbing';
+  }
+
+  function moverArrastre(x, y){
+    drag.clone.style.left = (x - drag.dx) + 'px';
+    drag.clone.style.top  = (y - drag.dy) + 'px';
+    drag.clone.style.visibility = 'hidden';
+    const bajo = document.elementFromPoint(x, y);
+    drag.clone.style.visibility = '';
+    if(y < 90) scrollBy(0, -16); else if(y > innerHeight - 90) scrollBy(0, 16);
+    if(!bajo) return;
+    const sobre = bajo.closest('.tile');
+    if(sobre && sobre !== drag.tile && !sobre.classList.contains('flying')){
+      const r = sobre.getBoundingClientRect();
+      const despues = x > r.left + r.width / 2;
+      sobre.parentNode.insertBefore(drag.tile, despues ? sobre.nextSibling : sobre);
+      return;
+    }
+    const grid = bajo.closest('.grid');
+    if(grid && !grid.contains(drag.tile)) grid.appendChild(drag.tile);
+  }
+
+  function soltarArrastre(){
+    if(drag.pid != null){ try{ document.body.releasePointerCapture(drag.pid); }catch(e){} }
+    drag.clone.remove(); drag.tile.classList.remove('ghost');
+    document.body.style.cursor = ''; drag = null;
+    guardarOrden();
+  }
+
+  async function guardarOrden(){
+    const pares = [];
+    document.querySelectorAll('section.cat').forEach(sec => {
+      sec.querySelectorAll('.tile').forEach(t => pares.push({ id: t.dataset.id, cat: sec.dataset.cat }));
+    });
+    if(!pares.length) return;
+    const ahora = pares.map(p => p.id + '~' + p.cat).join(',');
+    if(state.links.map(l => l.id + '~' + l.cat).join(',') === ahora) return;
+
+    const porId = new Map(state.links.map(l => [l.id, l]));
+    const vistos = new Set(pares.map(p => p.id));
+    state.links = pares.map(p => { const l = porId.get(p.id); l.cat = p.cat; return l; })
+                       .concat(state.links.filter(l => !vistos.has(l.id)));
+    document.getElementById('count').textContent = `${state.links.length} web${state.links.length===1?'':'s'} · ${state.cats.length} categoría${state.cats.length===1?'':'s'}`;
+
+    const sync = document.getElementById('sync');
+    sync.classList.add('show');
+    try{ await api({ action:'orderLinks', pares: ahora }); }
+    catch(err){ toast(err.message, true); load(); }
+    finally{ sync.classList.remove('show'); }
+  }
 
   /* ---------- Overlays y toast ---------- */
   function closeOverlays(){ document.querySelectorAll('.overlay').forEach(o => o.classList.remove('open')); }
