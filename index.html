@@ -83,6 +83,9 @@
   .preview img{width:22px;height:22px}
   .preview .t{font-size:13px; color:var(--muted)}
   .preview .t b{display:block; color:var(--text); font-size:14px}
+  .preview .btns{display:flex; gap:8px; flex-wrap:wrap}
+  .preview .btns .btn{padding:7px 12px; font-size:12.5px}
+  .preview.propio{border:1px solid var(--accent)}
 
   .order-list{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; max-height:50vh; overflow:auto}
   .order-list li{display:flex; align-items:center; gap:10px; padding:10px 10px 10px 14px; background:var(--surface); border:1px solid var(--line); border-radius:12px}
@@ -150,6 +153,7 @@
     <label for="fUrl">Dirección</label>
     <input id="fUrl" type="url" placeholder="https://..." autocomplete="off">
     <div class="preview" id="preview"><div class="t">Escribe la dirección para ver el icono</div></div>
+    <input type="file" id="fIco" accept="image/*" style="display:none">
     <label for="fName">Nombre</label>
     <input id="fName" type="text" placeholder="Se rellena solo con el dominio">
     <label for="fCat">Categoría</label>
@@ -202,6 +206,52 @@
       document.head.appendChild(s);
     });
   }
+  /* El icono a medida va por POST: un PNG en base64 no cabe en una URL. */
+  async function apiPost(params){
+    const body = JSON.stringify({ ...params, clave: CLAVE });
+    const opts = { method:'POST', body, headers:{ 'Content-Type':'text/plain;charset=utf-8' } };
+    try{
+      const d = await fetch(API, opts).then(r => r.json());
+      if(!d.ok) throw new Error(d.error || 'Error');
+      return d;
+    }catch(err){
+      if(!(err instanceof TypeError)) throw err;     // error de verdad del servidor
+      await fetch(API, { ...opts, mode:'no-cors' }); // CORS: lo mandamos a ciegas
+      return { ok:true };
+    }
+  }
+
+  /* Encaja la imagen que elija en un cuadrado y la deja lo bastante ligera
+     para que quepa en una celda del Sheet (50.000 caracteres). */
+  function aIcono(file){
+    return new Promise((res, rej) => {
+      const fr = new FileReader();
+      fr.onerror = () => rej(new Error('No se pudo leer el archivo'));
+      fr.onload = () => {
+        const im = new Image();
+        im.onerror = () => rej(new Error('Eso no parece una imagen'));
+        im.onload = () => {
+          for(const lado of [256, 192, 128, 96]){
+            const c = document.createElement('canvas');
+            c.width = c.height = lado;
+            const g = c.getContext('2d');
+            g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+            const k = Math.min(lado / im.width, lado / im.height);   // sin deformar
+            const w = im.width * k, h = im.height * k;
+            g.drawImage(im, (lado - w) / 2, (lado - h) / 2, w, h);
+            for(const tipo of ['image/webp', 'image/png']){
+              const d = c.toDataURL(tipo, .92);
+              if(d.startsWith('data:image/') && d.length <= 44000) return res(d);
+            }
+          }
+          rej(new Error('La imagen pesa demasiado, prueba con otra'));
+        };
+        im.src = fr.result;
+      };
+      fr.readAsDataURL(file);
+    });
+  }
+
   async function load(){
     try{
       const d = await api({ action: 'list' });
@@ -344,8 +394,11 @@
   }
   function tile(l){
     const letter = esc((l.name||host(l.url)||'?')[0].toUpperCase());
+    const ico = l.icon
+      ? `<div class="ico"><img src="${esc(l.icon)}" alt=""></div>`
+      : `<div class="ico" data-icon="${esc(l.url)}">${letter}</div>`;
     return `<a class="tile" href="${esc(l.url)}" target="_blank" rel="noopener" title="${esc(l.url)}" data-id="${esc(l.id)}">
-      <div class="ico" data-icon="${esc(l.url)}">${letter}</div>
+      ${ico}
       <div class="name">${esc(l.name)}</div>
       <button class="more" data-edit="${l.id}" title="Editar" aria-label="Editar ${esc(l.name)}">⋯</button>
       <div class="hold"><i></i></div>
@@ -388,6 +441,8 @@
   const fCat = document.getElementById('fCat'), fNewCat = document.getElementById('fNewCat');
   const preview = document.getElementById('preview'), btnSave = document.getElementById('btnSave');
   let editing = null, nameTouched = false;
+  let icoPropio = '', icoCambiado = false;
+  const fIco = document.getElementById('fIco');
 
   function fillCats(selected){
     fCat.innerHTML = state.cats.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')
@@ -405,6 +460,7 @@
     document.getElementById('addTitle').textContent = editing ? 'Editar web' : 'Nueva web';
     document.getElementById('btnDelete').style.display = editing ? '' : 'none';
     fUrl.value = editing?.url || ''; fName.value = editing?.name || ''; fNewCat.value = '';
+    icoPropio = editing?.icon || ''; icoCambiado = false; fIco.value = '';
     fillCats(editing?.cat); updatePreview();
     ovAdd.classList.add('open'); fUrl.focus();
   }
@@ -412,12 +468,36 @@
   function updatePreview(){
     const u = norm(fUrl.value), h = host(u);
     clearTimeout(previewT);
-    if(!h){ preview.innerHTML = `<div class="t">Escribe la dirección para ver el icono</div>`; return; }
-    if(!nameTouched) fName.value = h.split('.')[0].replace(/^\w/, c => c.toUpperCase());
-    const letter = esc((fName.value || h)[0].toUpperCase());
-    preview.innerHTML = `<div class="ico" data-icon="${esc(u)}">${letter}</div><div class="t"><b>${esc(fName.value)}</b>${esc(h)}</div>`;
-    previewT = setTimeout(() => paintIcons(preview), 450);   // espera a que termine de escribir
+    preview.classList.toggle('propio', !!icoPropio);
+    if(!h && !icoPropio){ preview.innerHTML = `<div class="t">Escribe la dirección para ver el icono</div>`; return; }
+    if(h && !nameTouched) fName.value = h.split('.')[0].replace(/^\w/, c => c.toUpperCase());
+    const letter = esc(((fName.value || h || '?')[0] || '?').toUpperCase());
+    const ico = icoPropio
+      ? `<div class="ico"><img src="${esc(icoPropio)}" alt=""></div>`
+      : `<div class="ico" data-icon="${esc(u)}">${letter}</div>`;
+    preview.innerHTML = ico + `<div class="t"><b>${esc(fName.value)}</b>${icoPropio ? 'Icono elegido por ti' : (h || '')}</div>
+      <div class="btns">
+        <button class="btn" type="button" data-ico="elegir">${icoPropio ? 'Cambiar icono' : 'Poner mi icono'}</button>
+        ${icoPropio ? '<button class="btn" type="button" data-ico="quitar">Quitar</button>' : ''}
+      </div>`;
+    if(!icoPropio) previewT = setTimeout(() => paintIcons(preview), 450);   // espera a que termine de escribir
   }
+  preview.addEventListener('click', e => {
+    const a = e.target.closest('[data-ico]')?.dataset.ico;
+    if(a === 'elegir') fIco.click();
+    if(a === 'quitar'){ icoPropio = ''; icoCambiado = true; fIco.value = ''; updatePreview(); }
+  });
+  fIco.addEventListener('change', async () => {
+    const f = fIco.files?.[0];
+    if(!f) return;
+    try{
+      icoPropio = await aIcono(f);
+      icoCambiado = true;
+      updatePreview();
+      toast('Icono listo, dale a Guardar');
+    }catch(err){ toast(err.message, true); }
+    fIco.value = '';
+  });
   fUrl.addEventListener('input', updatePreview);
   fName.addEventListener('input', () => { nameTouched = true; updatePreview(); });
   [fUrl,fName,fNewCat].forEach(el => el.addEventListener('keydown', e => { if(e.key==='Enter') btnSave.click(); }));
@@ -432,9 +512,24 @@
       params.nuevaCat = n;
     } else params.cat = fCat.value;
     btnSave.disabled = true;
+    const eraEdicion = editing, id0 = editing?.id;
     const ok = editing
       ? await run({ action:'editLink', id: editing.id, ...params }, 'Guardado')
       : await run({ action:'addLink', ...params }, 'Web añadida');
+
+    if(ok && icoCambiado){
+      const id = id0 || state.links.find(l => l.url === url)?.id;
+      if(id){
+        document.getElementById('sync').classList.add('show');
+        try{
+          await apiPost({ action:'setIcon', id, img: icoPropio });
+          const l = state.links.find(x => x.id === id);
+          if(l){ l.icon = icoPropio; render(); }
+          toast(icoPropio ? 'Icono guardado' : 'Icono quitado');
+        }catch(err){ toast(err.message, true); }
+        finally{ document.getElementById('sync').classList.remove('show'); }
+      }
+    }
     btnSave.disabled = false;
     if(ok) closeOverlays();
   });
