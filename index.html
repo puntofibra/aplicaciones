@@ -212,19 +212,19 @@
   const iconCache = new Map();   // url de la web -> src del icono (o null)
   let iconRun = 0;               // invalida pinturas viejas al recargar
 
-  // Carga una imagen y responde con su src si es valida. minSize sirve para
-  // descartar el globo generico de Google, que llega a 16px aunque pidamos 64.
-  function loadImg(src, minSize){
+  // Carga una imagen y responde con su ancho real (0 si falla).
+  function imgSize(src){
     return new Promise(res => {
-      if(!src) return res(null);
+      if(!src) return res(0);
       const i = new Image();
       const done = v => { clearTimeout(t); i.onload = i.onerror = null; res(v); };
-      const t = setTimeout(() => done(null), 7000);
-      i.onload  = () => done(i.naturalWidth && i.naturalWidth >= (minSize || 1) ? src : null);
-      i.onerror = () => done(null);
+      const t = setTimeout(() => done(0), 7000);
+      i.onload  = () => done(i.naturalWidth || 0);
+      i.onerror = () => done(0);
       i.src = src;
     });
   }
+  const loadImg = async src => (await imgSize(src)) ? src : null;
 
   // Lee el <link rel="icon"> que declara la propia pagina. Solo funciona con
   // webs del mismo origen (el resto lo bloquea CORS), pero eso cubre todas mis
@@ -247,21 +247,29 @@
 
   async function resolveIcon(u){
     if(iconCache.has(u)) return iconCache.get(u);
-    let url; try{ url = new URL(u); }catch{ iconCache.set(u, null); return null; }
+    const done = v => { iconCache.set(u, v); return v; };
+    let url; try{ url = new URL(u); }catch{ return done(null); }
     const dir = url.origin + url.pathname.replace(/[^/]*$/, '');
-    const cands = [
-      [await declaredIcon(u), 0],
-      [dir + 'favicon.svg', 0], [dir + 'favicon.ico', 0],
-      [dir + 'icon.svg', 0], [dir + 'icon.png', 0], [dir + 'icon-192.png', 0],
-      [url.origin + '/favicon.svg', 0], [url.origin + '/favicon.ico', 0],
-      ['https://icons.duckduckgo.com/ip3/' + url.hostname + '.ico', 0],
-      ['https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=64&url=' + encodeURIComponent(url.origin + '/'), 17],
-      ['https://www.google.com/s2/favicons?domain=' + encodeURIComponent(url.hostname) + '&sz=64', 17]
+
+    // 1) El icono que declara la propia pagina, y los sitios habituales.
+    const directos = [
+      await declaredIcon(u),
+      dir + 'favicon.svg', dir + 'favicon.ico',
+      dir + 'icon.svg', dir + 'icon.png', dir + 'icon-192.png',
+      url.origin + '/favicon.svg', url.origin + '/favicon.ico'
     ];
-    let out = null;
-    for(const [src, min] of cands){ out = await loadImg(src, min); if(out) break; }
-    iconCache.set(u, out);
-    return out;
+    for(const src of directos){ if(await loadImg(src)) return done(src); }
+
+    // 2) Google. Pedimos 64px: si contesta 16 es su globo generico, o sea que
+    //    no conoce el dominio (y entonces DuckDuckGo tampoco suele conocerlo).
+    const g = 'https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=64&url=' + encodeURIComponent(url.origin + '/');
+    const ancho = await imgSize(g);
+    if(ancho >= 17) return done(g);
+    if(ancho === 16) return done(null);          // globo generico -> mejor la inicial
+
+    // 3) Google ni contesto: probamos DuckDuckGo.
+    const d = 'https://icons.duckduckgo.com/ip3/' + url.hostname + '.ico';
+    return done(await loadImg(d));
   }
 
   // Mientras se resuelve se ve la inicial; al resolverse se sustituye por el icono.
