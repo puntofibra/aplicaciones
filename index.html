@@ -128,15 +128,98 @@
   .sync.show{opacity:.8}
   @media (max-width:600px){header,main{padding-left:18px;padding-right:18px} header{padding-top:28px} .hint{display:none}}
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+  /* ================= Capa pro: fondo vivo, cristal, luz que sigue al ratón ================= */
+  body{background:#070d18; overflow-x:hidden}
+  .bgfx{position:fixed; inset:0; z-index:-1; overflow:hidden; pointer-events:none;
+    background:radial-gradient(1200px 700px at 15% -10%, #1b3560 0%, #0b1424 55%, #070d18 100%)}
+  .bgfx i{position:absolute; border-radius:50%; filter:blur(90px); will-change:transform}
+  .bgfx .a{width:46vw; height:46vw; left:-10vw; top:-16vw; background:#2f6bff; opacity:.5; animation:flo1 26s ease-in-out infinite alternate}
+  .bgfx .b{width:38vw; height:38vw; right:-10vw; top:22vh; background:#7c3aed; opacity:.32; animation:flo2 32s ease-in-out infinite alternate}
+  .bgfx .c{width:44vw; height:44vw; left:28vw; bottom:-26vw; background:#12c9b5; opacity:.26; animation:flo3 30s ease-in-out infinite alternate}
+  .bgfx::after{content:""; position:absolute; inset:0;
+    background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);
+    background-size:46px 46px; -webkit-mask-image:radial-gradient(ellipse at 50% 25%,#000 10%,transparent 72%); mask-image:radial-gradient(ellipse at 50% 25%,#000 10%,transparent 72%)}
+  @keyframes flo1{to{transform:translate(12vw,10vh) scale(1.15)}}
+  @keyframes flo2{to{transform:translate(-14vw,-8vh) scale(1.2)}}
+  @keyframes flo3{to{transform:translate(-10vw,-12vh) scale(.9)}}
+
+  header{align-items:center; padding-bottom:14px}
+  header h1{background:linear-gradient(90deg,#fff 0%,#a9c8ff 30%,#7ff0e2 50%,#a9c8ff 70%,#fff 100%); background-size:300% 100%;
+    -webkit-background-clip:text; background-clip:text; color:transparent; animation:brillo 10s linear infinite, bajar .7s cubic-bezier(.2,.8,.2,1) backwards}
+  header h1 img{filter:drop-shadow(0 6px 16px rgba(255,184,77,.45)); animation:latir 4s ease-in-out infinite}
+  @keyframes brillo{to{background-position:-300% 0}}
+  @keyframes bajar{from{opacity:0; transform:translateY(-14px)}}
+  @keyframes latir{50%{transform:scale(1.08) rotate(-4deg)}}
+  .hud{display:flex; align-items:center; gap:18px; margin-left:auto; animation:bajar .7s .1s cubic-bezier(.2,.8,.2,1) backwards}
+  .buscar{position:relative; display:block; margin:0; width:min(300px,46vw)}
+  .buscar svg{position:absolute; left:14px; top:50%; transform:translateY(-50%); color:var(--muted); pointer-events:none}
+  .buscar input{padding:12px 14px 12px 40px; border-radius:999px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12);
+    transition:background .2s, border-color .2s, box-shadow .2s, width .2s}
+  .buscar input::placeholder{color:var(--muted)}
+  .buscar input:focus{background:rgba(255,255,255,.1); border-color:#6ea3ff; box-shadow:0 0 0 4px rgba(47,107,255,.25), 0 10px 30px rgba(47,107,255,.25)}
+  .reloj{text-align:right; line-height:1.15}
+  .reloj b{display:block; font-size:26px; font-weight:800; letter-spacing:-.02em; font-variant-numeric:tabular-nums}
+  .reloj span{display:block; font-size:12px; color:var(--muted)}
+  .reloj span::first-letter{text-transform:uppercase}
+  header .count{flex-basis:100%; font-size:13px; letter-spacing:.04em}
+
+  .cat h2{font-size:12.5px; letter-spacing:.18em; text-transform:uppercase; color:#a9bbd6}
+  .cat h2 em{font-style:normal; font-size:11px; letter-spacing:0; padding:2px 8px; border-radius:999px; background:rgba(120,170,255,.14); color:#bcd3ff; border:1px solid rgba(120,170,255,.25)}
+  .cat h2::after{height:1px; background:linear-gradient(90deg,rgba(120,170,255,.55),rgba(18,201,181,.25) 40%,transparent)}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(118px,1fr)); gap:16px}
+
+  .tile{padding:20px 8px 15px; overflow:hidden; background:linear-gradient(160deg,rgba(255,255,255,.085),rgba(255,255,255,.022));
+    border:1px solid rgba(255,255,255,.1); box-shadow:0 10px 26px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.09);
+    transition:transform .2s cubic-bezier(.2,.8,.2,1), box-shadow .25s, border-color .25s, background .25s}
+  .tile::before{content:""; position:absolute; inset:0; pointer-events:none; opacity:0; transition:opacity .25s;
+    background:radial-gradient(190px circle at var(--mx,50%) var(--my,50%), rgba(120,170,255,.3), transparent 62%)}
+  .tile::after{content:""; position:absolute; top:0; left:-90%; width:55%; height:100%; pointer-events:none;
+    background:linear-gradient(100deg,transparent,rgba(255,255,255,.16),transparent); transform:skewX(-18deg)}
+  .tile:hover,.tile:focus-visible{background:linear-gradient(160deg,rgba(255,255,255,.13),rgba(255,255,255,.04)); border-color:rgba(140,180,255,.55);
+    transform:perspective(700px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) translateY(-6px);
+    box-shadow:0 24px 46px rgba(0,0,0,.5), 0 0 0 1px rgba(120,170,255,.22), 0 0 36px rgba(47,107,255,.28), inset 0 1px 0 rgba(255,255,255,.16)}
+  .tile:hover::before{opacity:1}
+  .tile:hover::after{left:135%; transition:left .75s ease}
+  .tile:active{transform:translateY(-1px) scale(.97)}
+  .tile .ico{position:relative; width:60px; height:60px; border-radius:16px; box-shadow:0 8px 18px rgba(0,0,0,.4); transition:transform .3s cubic-bezier(.2,1.6,.4,1), box-shadow .3s}
+  .tile:hover .ico{transform:translateY(-3px) scale(1.1); box-shadow:0 16px 28px rgba(0,0,0,.5)}
+  .tile .name{position:relative; transition:color .2s}
+  .tile:hover .name{color:#fff}
+  .tile .more{z-index:2}
+  .tile.off,.cat.off{display:none}
+  .tile.hit{border-color:var(--accent); box-shadow:0 0 0 2px var(--accent), 0 0 36px rgba(255,184,77,.35)}
+  body.reorder .tile::before,body.reorder .tile::after,.tile.flying::before,.tile.flying::after{display:none}
+  body.reorder .tile:hover .ico{transform:none}
+
+  main.intro .tile{animation:entra .6s cubic-bezier(.2,.9,.3,1.25) backwards; animation-delay:calc(var(--i,0) * 18ms + 120ms)}
+  main.intro .cat h2{animation:bajar .6s backwards; animation-delay:calc(var(--c,0) * 90ms)}
+  @keyframes entra{from{opacity:0; transform:translateY(22px) scale(.86)}}
+  .nada{display:none; margin:12vh auto 0; text-align:center; color:var(--muted); font-size:16px}
+  body.sin .nada{display:block}
+
+  .fab-menu{background:rgba(22,36,60,.86); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); border-color:rgba(255,255,255,.14); transform-origin:top left}
+  .fab-menu.open{animation:pop .18s cubic-bezier(.2,1.4,.4,1)}
+  .overlay.open .panel{animation:pop .28s cubic-bezier(.2,1.3,.4,1)}
+  .panel{background:rgba(17,29,50,.92); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px); border-color:rgba(255,255,255,.14)}
+  @keyframes pop{from{opacity:0; transform:scale(.92) translateY(8px)}}
+  @media (max-width:600px){.reloj{display:none} .hud{flex-basis:100%; margin-left:0} .buscar{width:100%} .grid{grid-template-columns:repeat(auto-fill,minmax(96px,1fr)); gap:12px} .tile .ico{width:54px; height:54px}}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important}}
 </style>
 </head>
 <body>
 
+<div class="bgfx" aria-hidden="true"><i class="a"></i><i class="b"></i><i class="c"></i></div>
 <header>
   <h1><img src="favicon.svg" alt="">Mis aplicaciones</h1>
+  <div class="hud">
+    <label class="buscar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="q" type="search" placeholder="Buscar…  pulsa /" autocomplete="off" aria-label="Buscar una web"></label>
+    <div class="reloj" aria-hidden="true"><b id="hora">--:--</b><span id="fecha"></span></div>
+  </div>
   <div class="count" id="count"></div>
 </header>
 <main id="main"><div class="empty"><div class="pulse">…</div>Cargando tus webs</div></main>
+<div class="nada">Ninguna web coincide con la búsqueda</div>
 <div class="hint">Triple clic en el fondo para el menú · mantén pulsado un icono 3 s para moverlo</div>
 <div class="sync" id="sync">Guardando…</div>
 
@@ -386,13 +469,67 @@
         Todavía no hay nada aquí.<br><strong>Haz triple clic en el fondo</strong> para añadir tu primera web.</div>`;
       return;
     }
+    let nT = 0, nC = 0;
     main.innerHTML = state.cats.map(c => {
       const ls = state.links.filter(l => l.cat === c.id);
       if(!ls.length) return '';
-      return `<section class="cat" data-cat="${esc(c.id)}"><h2>${esc(c.name)}</h2><div class="grid">${ls.map(tile).join('')}</div></section>`;
+      return `<section class="cat" data-cat="${esc(c.id)}"><h2 style="--c:${nC++}">${esc(c.name)}<em>${ls.length}</em></h2><div class="grid">${ls.map(l => tile(l).replace('<a class="tile"', `<a class="tile" style="--i:${nT++}"`)).join('')}</div></section>`;
     }).join('');
     paintIcons(main);
+    if(!introHecha){ introHecha = true; main.classList.add('intro'); setTimeout(() => main.classList.remove('intro'), 2600); }   // la entrada animada solo la primera vez
+    filtrar();
   }
+  let introHecha = false;
+
+  /* ---------- Buscador: escribe y filtra; Enter abre la primera ---------- */
+  const q = document.getElementById('q');
+  function filtrar(){
+    const t = q.value.trim().toLowerCase(); let n = 0, first = null;
+    main.querySelectorAll('.cat').forEach(sec => {
+      let v = 0;
+      sec.querySelectorAll('.tile').forEach(a => {
+        const ok = !t || a.querySelector('.name').textContent.toLowerCase().includes(t) || (a.title || '').toLowerCase().includes(t);
+        a.classList.toggle('off', !ok); a.classList.remove('hit');
+        if(ok){ v++; if(t && !first) first = a; }
+      });
+      sec.classList.toggle('off', !v); n += v;
+    });
+    if(first) first.classList.add('hit');
+    document.body.classList.toggle('sin', !!t && !n);
+  }
+  q.addEventListener('input', filtrar);
+  q.addEventListener('keydown', e => {
+    if(e.key === 'Enter'){ const a = main.querySelector('.tile.hit'); if(a){ window.open(a.href, '_blank', 'noopener'); q.value = ''; filtrar(); q.blur(); } }
+    else if(e.key === 'Escape'){ q.value = ''; filtrar(); q.blur(); }
+  });
+  document.addEventListener('keydown', e => {
+    if(e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+    if(/^(INPUT|SELECT|TEXTAREA)$/.test((document.activeElement || {}).tagName || '') || document.querySelector('.overlay.open')) return;
+    e.preventDefault(); q.focus(); q.select();
+  });
+
+  /* ---------- Luz e inclinación que siguen al ratón ---------- */
+  if(matchMedia('(hover:hover)').matches){
+    main.addEventListener('pointermove', e => {
+      if(document.body.classList.contains('reorder')) return;
+      const t = e.target.closest('.tile'); if(!t) return;
+      const r = t.getBoundingClientRect(), x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+      t.style.setProperty('--mx', (x * 100).toFixed(1) + '%'); t.style.setProperty('--my', (y * 100).toFixed(1) + '%');
+      t.style.setProperty('--ry', ((x - .5) * 12).toFixed(2) + 'deg'); t.style.setProperty('--rx', ((.5 - y) * 12).toFixed(2) + 'deg');
+    });
+    main.addEventListener('pointerout', e => {
+      const t = e.target.closest('.tile'); if(!t || t.contains(e.relatedTarget)) return;
+      t.style.setProperty('--rx', '0deg'); t.style.setProperty('--ry', '0deg');
+    });
+  }
+
+  /* ---------- Reloj ---------- */
+  (function reloj(){
+    const d = new Date();
+    document.getElementById('hora').textContent = d.toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit' });
+    document.getElementById('fecha').textContent = d.toLocaleDateString('es-ES', { weekday:'long', day:'numeric', month:'long' });
+    setTimeout(reloj, 15000);
+  })();
   function tile(l){
     const letter = esc((l.name||host(l.url)||'?')[0].toUpperCase());
     const ico = l.icon
