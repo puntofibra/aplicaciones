@@ -204,6 +204,10 @@
   .panel{background:rgba(17,29,50,.92); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px); border-color:rgba(255,255,255,.14)}
   @keyframes pop{from{opacity:0; transform:scale(.92) translateY(8px)}}
   @media (max-width:600px){.reloj{display:none} .hud{flex-basis:100%; margin-left:0} .buscar{width:100%} .grid{grid-template-columns:repeat(auto-fill,minmax(96px,1fr)); gap:12px} .tile .ico{width:54px; height:54px}}
+  .tile .more{display:none}
+  body.editar .tile .more{display:block; opacity:1; background:rgba(7,13,24,.7); color:var(--accent)}
+  body.editar .tile{border-color:rgba(255,184,77,.45); cursor:pointer}
+  body.reorder .tile .more{display:none}
   @media (prefers-reduced-motion:reduce){*{animation:none!important}}
 </style>
 </head>
@@ -220,13 +224,13 @@
 </header>
 <main id="main"><div class="empty"><div class="pulse">…</div>Cargando tus webs</div></main>
 <div class="nada">Ninguna web coincide con la búsqueda</div>
-<div class="hint">Triple clic en el fondo para el menú · mantén pulsado un icono 3 s para moverlo</div>
 <div class="sync" id="sync">Guardando…</div>
 
 <div class="fab-menu" id="menu">
   <button data-act="add"><span>+</span>Añadir web</button>
   <button data-act="order"><span>⇅</span>Ordenar categorías</button>
   <button data-act="mover"><span>✣</span>Mover iconos</button>
+  <button data-act="editar"><span>✎</span><b id="mEditar" style="font-weight:inherit">Editar iconos</b></button>
   <div class="sep"></div>
   <button data-act="reload"><span>↻</span>Recargar</button>
 </div>
@@ -544,8 +548,18 @@
   }
   main.addEventListener('click', e => {
     const b = e.target.closest('[data-edit]');
-    if(b){ e.preventDefault(); openAdd(b.dataset.edit); }
+    if(b){ e.preventDefault(); openAdd(b.dataset.edit); return; }
+    // En «Editar iconos» pulsar un icono lo edita en vez de abrir la web
+    const t = document.body.classList.contains('editar') && e.target.closest('.tile');
+    if(t){ e.preventDefault(); openAdd(t.dataset.id); }
   });
+  // Los tres puntitos solo salen con «Editar iconos» del menú; Esc o el mismo menú lo quitan.
+  function modoEditar(on){
+    document.body.classList.toggle('editar', on);
+    document.getElementById('mEditar').textContent = on ? 'Terminar de editar' : 'Editar iconos';
+    if(on) toast('Pulsa un icono para editarlo · Esc para terminar');
+  }
+  document.addEventListener('keydown', e => { if(e.key === 'Escape' && document.body.classList.contains('editar') && !document.querySelector('.overlay.open')) modoEditar(false); }, true);
 
   /* ---------- Triple clic en el fondo ---------- */
   const menu = document.getElementById('menu');
@@ -569,6 +583,7 @@
     if(act === 'add') openAdd();
     if(act === 'order') openOrder();
     if(act === 'mover') entrarMover();
+    if(act === 'editar') modoEditar(!document.body.classList.contains('editar'));
     if(act === 'reload'){ iconCache.clear(); iconRun++; load().then(() => toast('Actualizado')); }
   });
   document.addEventListener('keydown', e => { if(e.key === 'Escape'){ closeMenu(); closeOverlays(); salirMover(); } });
